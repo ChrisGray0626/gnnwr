@@ -173,17 +173,21 @@ class GNNWR:
 
         self._use_gpu = use_gpu
         if self._use_gpu:
-            if torch.cuda.is_available():
+            if torch.backends.mps.is_available():
+                self._device = torch.device("mps")
+            elif torch.cuda.is_available():
                 devices = [i for i in range(torch.cuda.device_count())]
                 os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(map(str, devices))
+                self._device = torch.device("cuda")
             else:
                 self._use_gpu = False
-
+                self._device = torch.device("cpu")
+        else:
+            self._device = torch.device("cpu")
         self._optimizer = None
         self._scheduler = None
         self._optimizer_name = None
         self.init_optimizer(optimizer, optimizer_params)  # initialize the optimizer
-        self._device = torch.device('cuda') if self._use_gpu else torch.device('cpu')
 
     def init_optimizer(self, optimizer, optimizer_params=None):
         r"""
@@ -200,23 +204,23 @@ class GNNWR:
             default values will be used. The dictionary can contain the following keys:
 
             - **scheduler** \: *str*
-            
+
             The type of learning rate scheduler to use. Valid options include ``Special``,
             ``Constant``, and ``MultiStepLR``.
             - **maxlr** \: *float*
-                
+
                 The maximum learning rate for the scheduler, for ``Special``.
             - **minlr** \: *float*
-                
+
                 The minimum learning rate for the scheduler, for ``Special``.
             - **upepoch** \: *int*
-                
+
                 The number of epochs until the maximum learning rate is reached, for ``Special``.
             - **decayepoch** \: *int*
-                
+
                 The epoch at which learning rate decay starts, for ``Special``.
             - **decayrate** \: *float*
-                
+
                 The rate at which the learning rate decays, for ``Special``.
             - **stop_change_epoch** \: *int*
 
@@ -456,8 +460,8 @@ class GNNWR:
         self.__istrained = True
         if self._use_gpu:
             self._model = nn.DataParallel(module=self._model)  # parallel computing
-            self._model = self._model.cuda()
-            self._out = self._out.cuda()
+            self._model = self._model.to(self._device)
+            self._out = self._out.to(self._device)
         # create file
         if not os.path.exists(self._log_path):
             os.mkdir(self._log_path)
@@ -538,8 +542,8 @@ class GNNWR:
                 data = batch[0]
                 coef = batch[1]
                 if self._use_gpu:
-                    result, data, coef = result.cuda(), data.cuda(), coef.cuda()
-                    ols_w = torch.tensor(self._coefficient).to(torch.float32).cuda()
+                    result, data, coef = result.to(self._device), data.to(self._device), coef.to(self._device)
+                    ols_w = torch.tensor(self._coefficient).to(torch.float32).to(self._device)
                 else:
                     ols_w = torch.tensor(self._coefficient).to(torch.float32)
                 weight = self._model(data)
@@ -577,8 +581,8 @@ class GNNWR:
                 data = batch[0]
                 coef = batch[1]
                 if self._use_gpu:
-                    result, data, coef = result.cuda(), data.cuda(), coef.cuda()
-                    ols_w = torch.tensor(self._coefficient).to(torch.float32).cuda()
+                    result, data, coef = result.to(self._device), data.to(self._device), coef.to(self._device)
+                    ols_w = torch.tensor(self._coefficient).to(torch.float32).to(self._device)
                 else:
                     ols_w = torch.tensor(self._coefficient).to(torch.float32)
                 coefficient = self._model(data).mul(ols_w)
@@ -606,8 +610,8 @@ class GNNWR:
         else:
             self._model = torch.load(path, map_location=map_location, weights_only=False)
         if self._use_gpu:
-            self._model = self._model.cuda()
-            self._out = self._out.cuda()
+            self._model = self._model.to(self._device)
+            self._out = self._out.to(self._device)
         else:
             self._model = self._model.cpu()
             self._out = self._out.cpu()
@@ -656,8 +660,8 @@ class GNNWR:
         """
         for data, coef, label, data_index in self._train_dataset.dataloader:
             if self._use_gpu:
-                data = data.cuda()
-                self._model = self._model.cuda()
+                data = data.to(self._device)
+                self._model = self._model.to(self._device)
             else:
                 self._model = self._model.cpu()
                 data = data.cpu()
@@ -693,8 +697,8 @@ class GNNWR:
             self._model = torch.load(path, map_location=map_location, weights_only=False)
         if self._use_gpu:
             self._model = nn.DataParallel(module=self._model)  # parallel computing
-            self._model = self._model.cuda()
-            self._out = self._out.cuda()
+            self._model = self._model.to(self._device)
+            self._out = self._out.to(self._device)
         else:
             self._model = self._model.cpu()
             self._out = self._out.cpu()
@@ -774,11 +778,11 @@ class GNNWR:
 
         if self._use_gpu:
             self._model = nn.DataParallel(module=self._model)
-            self._model,self._out = self._model.cuda(),self._out.cuda()
+            self._model,self._out = self._model.to(self._device),self._out.to(self._device)
         else:
             self._model, self._out = self._model.cpu(), self._out.cpu()
 
-        device = torch.device('cuda') if self._use_gpu else torch.device('cpu')
+        device = self._device
         result = torch.tensor([]).to(torch.float32).to(device)
         train_data_size = valid_data_size = 0
         
